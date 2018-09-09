@@ -1,0 +1,148 @@
+---
+title: "DATA607 Week 2"
+author: "Sergio Ortega Cruz"
+date: "September 2, 2018"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Week 2
+
+Choose six recent popular movies.  Ask at least five people that you know (friends, family, classmates, imaginary friends) to rate each of these movie that they have seen on a scale of 1 to 5.  Take the results (observations) and store them in a SQL database.  Load the information into an R dataframe.
+
+```{r cars}
+library(DBI)
+library(dplyr)
+
+#Asking Interactively for DB Password
+#psswd <- .rs.askForPassword("Database Password:")
+#Connecting to the Database
+#con <- DBI::dbConnect(RMySQL::MySQL(), dbname = "cunydata607week2", user="root", password=passwd)
+#for Markup purposes harcoded line hidden
+```
+```{r hidden, echo=FALSE}
+con <- DBI::dbConnect(RMySQL::MySQL(), dbname = "cunydata607week2", user="root", password="espaces23")
+```
+
+```{r cont}
+#Display available Data
+db_list_tables(con)
+
+```
+
+```{r queries}
+#executing several queries and getting results in Dataframes
+library(ggplot2)
+sql<- "SELECT * FROM movies"
+res <- dbGetQuery(con,sql)
+movie.catalogue <- data.frame(res)
+
+sql2<-"SELECT  survey.rating, movies.title, movies.movie_id, users.user_name FROM survey 
+ INNER JOIN movies ON survey.movie_id = movies.movie_id 
+ INNER JOIN users  ON survey.user_id = users.user_id
+ order by movies.title, rating desc"
+
+moviesandratings<-data.frame(dbGetQuery(con,sql2))
+
+
+qplot(title, rating, data=moviesandratings,xlab = "Rating", ylab = "Movie", main = "Individual Movie Rating by Reviewer") + facet_wrap(~user_name) + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ 
+ 
+```
+Showing movies per accumulated ranking
+
+```{r accumulated}
+
+ggplot(moviesandratings, aes(x = reorder(title, rating), y = rating, fill = title),
+       xlab = 'Rating',  col = I("grey")) + geom_bar(stat = "identity") + 
+  ggtitle("Movie Cummulative Ratings") +  labs(x = "Movie") +  coord_flip()
+
+```
+
+Now Generating a CSS parser and comparing the survey results versus IMDB (www.imdb.com) results
+
+
+```{r imdbparsing}
+
+
+
+library(rvest)
+
+
+#Using CSS Selector for extracting the rating of the movie.
+crazyrich <- read_html("https://www.imdb.com/title/tt3104988/?ref_=fn_al_tt_1")
+CR<- crazyrich %>%html_node("strong span") %>% html_text() %>%as.numeric()
+
+searching <- read_html("https://www.imdb.com/title/tt7668870/?ref_=fn_al_tt_1")
+SE<-searching %>%html_node("strong span") %>% html_text() %>%as.numeric()
+
+alpha <- read_html("https://www.imdb.com/title/tt4244998/?ref_=fn_al_tt_1")
+AL<-alpha %>%html_node("strong span") %>% html_text() %>%as.numeric()
+
+AXL <- read_html("https://www.imdb.com/title/tt5709188/?ref_=fn_al_tt_2")
+AX<-AXL %>%html_node("strong span") %>% html_text() %>%as.numeric()
+
+mile22 <- read_html("https://www.imdb.com/title/tt4560436/?ref_=nv_sr_1")
+MI<-mile22 %>%html_node("strong span") %>% html_text() %>%as.numeric()
+
+thenun <- read_html("https://www.imdb.com/title/tt5814060/?ref_=fn_al_tt_1")
+TN<-mile22 %>%html_node("strong span") %>% html_text() %>%as.numeric()
+
+imdbratings <- c(CR,SE,AL,AX,MI,TN)
+```
+
+```{r ratingsnorm}
+imdbratings_percentage <- (imdbratings*100)/9.9
+
+#QUERY CRAZYRICH
+sqlcomp <- "select avg(rating) from survey INNER JOIN movies on survey.movie_id=movies.movie_id where movies.movie_id=1"
+rescomp1 <- ((dbGetQuery(con,sqlcomp))*100)/5.5
+#df.compare<- (rescomp*100)/5.5 #normalizing scale for comparison
+
+#QUERY SEARCHING
+sqlcomp <- "select avg(rating) from survey INNER JOIN movies on survey.movie_id=movies.movie_id where movies.movie_id=2"
+rescomp2 <- ((dbGetQuery(con,sqlcomp))*100)/5.5
+
+#QUERY ALPHA
+sqlcomp <- "select avg(rating) from survey INNER JOIN movies on survey.movie_id=movies.movie_id where movies.movie_id=3"
+rescomp3 <- ((dbGetQuery(con,sqlcomp))*100)/5.5
+
+#QUERY AXL
+sqlcomp <- "select avg(rating) from survey INNER JOIN movies on survey.movie_id=movies.movie_id where movies.movie_id=4"
+rescomp4 <- ((dbGetQuery(con,sqlcomp))*100)/5.5
+
+#QUERY MILE22
+sqlcomp <- "select avg(rating) from survey INNER JOIN movies on survey.movie_id=movies.movie_id where movies.movie_id=5"
+rescomp5 <- ((dbGetQuery(con,sqlcomp))*100)/5.5
+
+#QUERY THE NUN
+sqlcomp <- "select avg(rating) from survey INNER JOIN movies on survey.movie_id=movies.movie_id where movies.movie_id=6"
+rescomp6 <- ((dbGetQuery(con,sqlcomp))*100)/5.5
+df.compare<-c(rescomp1, rescomp2, rescomp3, rescomp4, rescomp5, rescomp6)
+df.com<-as.data.frame.integer(df.compare)
+
+df.final<-as.data.frame(imdbratings_percentage,df.com)
+df.final <-(cbind(df.final,df.com))
+df.final<-cbind(df.final,movie.catalogue$title)
+df.final <- cbind(df.final, movie.catalogue$movie_id)
+```
+Showing the difference of Ratings between critics compilation on IMDB.com Vs the Survey
+
+Showing in Blue line Survey Ratings Vs Orange dots IMDB Ratings
+
+```{r plot2}
+
+ggplot(df.final, aes(x= movie.catalogue$movie_id, y= imdbratings_percentage, colour="IMDB RATINGS", label=movie.catalogue$title))+ 
+  geom_point() + geom_text(aes(label=movie.catalogue$title)) + geom_line (aes(y=as.numeric(df.compare)), colour="blue")
+
+ #Closing connection to DB
+DBI::dbDisconnect(con)
+```
+
+
+
+
